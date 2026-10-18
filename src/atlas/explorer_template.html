@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Heritage Atlas</title>
+<style>
+:root{--bg:#f7f5f0;--fg:#1d1b18;--muted:#6b665d;--line:#d9d4c9;--card:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#161513;--fg:#ece8df;--muted:#9a948a;--line:#34312c;--card:#201e1b}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+header{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+h1{font-size:18px;margin:0;font-weight:600}input{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);min-width:220px}
+main{display:grid;grid-template-columns:1fr 340px;height:calc(100vh - 62px)}
+@media (max-width:800px){main{grid-template-columns:1fr;height:auto}#map{height:60vh}}
+#map{width:100%;height:100%;display:block}aside{border-left:1px solid var(--line);overflow:auto;padding:16px}
+.muted{color:var(--muted)}.rel{padding:8px 0;border-top:1px solid var(--line)}.tag{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+img{max-width:100%;border-radius:6px;margin:8px 0}
+</style></head><body>
+<header><h1>Heritage Atlas</h1><input id="q" placeholder="Filter by title, artist, theme…"><span class="muted" id="count"></span></header>
+<main><canvas id="map"></canvas><aside id="side"><p class="muted">Hover or click a point. Colours are clusters; grey is unclustered.</p><div id="legend"></div></aside></main>
+<script>
+const DATA=/*DATA*/null;const items=DATA.items, rels=DATA.rels;
+const cv=document.getElementById('map'),ctx=cv.getContext('2d'),side=document.getElementById('side');
+const pal=['#c0392b','#2e86ab','#e09f3e','#3b8b5a','#8e5ea2','#d1495b','#00798c','#9c6644','#5f6caf','#6a994e'];
+const col=k=>k<0?'#9a948a':pal[k%pal.length];let filt=items,sel=null,pts=[];
+function fit(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;ctx.setTransform(d,0,0,d,0,0);draw()}
+function draw(){const r=cv.getBoundingClientRect(),W=r.width,H=r.height,p=40;
+ const xs=items.map(i=>i.x),ys=items.map(i=>i.y),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+ const sx=v=>p+(v-x0)/((x1-x0)||1)*(W-2*p),sy=v=>H-p-(v-y0)/((y1-y0)||1)*(H-2*p);
+ ctx.clearRect(0,0,W,H);pts=[];const on=new Set(filt.map(i=>i.entity_id));
+ if(sel){ctx.strokeStyle=getComputedStyle(document.body).color;ctx.globalAlpha=.35;
+  rels.filter(r=>r.b&&(r.a===sel.entity_id||r.b===sel.entity_id)).forEach(r=>{const a=items.find(i=>i.entity_id===r.a),b=items.find(i=>i.entity_id===r.b);
+  ctx.beginPath();ctx.moveTo(sx(a.x),sy(a.y));ctx.lineTo(sx(b.x),sy(b.y));ctx.stroke()});ctx.globalAlpha=1}
+ for(const it of items){const X=sx(it.x),Y=sy(it.y);pts.push([X,Y,it]);ctx.globalAlpha=on.has(it.entity_id)?1:.12;
+  ctx.fillStyle=col(it.cluster);ctx.beginPath();ctx.arc(X,Y,it===sel?8:it.has_image?6:4,0,7);ctx.fill()}
+ ctx.globalAlpha=1;document.getElementById('count').textContent=filt.length+' of '+items.length+' objects'}
+function near(e){const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;let best=null,bd=144;
+ for(const [X,Y,it] of pts){const d=(X-x)**2+(Y-y)**2;if(d<bd){bd=d;best=it}}return best}
+function show(it){const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ const rs=rels.filter(r=>r.a===it.entity_id||r.b===it.entity_id);
+ side.innerHTML=`<div class="tag">${esc(it.cluster_label)}</div><h2 style="margin:4px 0 6px;font-size:17px">${esc(it.title)}</h2>
+ <div class="muted">${esc((it.creators||[]).join(', '))}${it.year_start?' · '+it.year_start:''}${it.institution?' · '+esc(it.institution):''}</div>
+ ${it.has_image&&it.image_url?`<img src="${esc(it.image_url)}" alt="" loading="lazy">`:''}<p>${esc(it.caption)}</p>
+ ${(it.themes||[]).length?`<p class="muted">Research themes: ${esc(it.themes.join(', '))}</p>`:''}
+ <h3 style="font-size:14px">Relationships</h3>${rs.length?rs.map(r=>{const o=items.find(i=>i.entity_id===(r.a===it.entity_id?r.b:r.a));
+ return `<div class="rel"><div class="tag">${esc(r.type)}</div>${o?esc(o.title):''}<div class="muted">${esc(r.evidence)}</div></div>`}).join(''):'<p class="muted">None found.</p>'}`}
+cv.addEventListener('mousemove',e=>{const it=near(e);cv.style.cursor=it?'pointer':'default';if(it&&!sel)show(it)});
+cv.addEventListener('click',e=>{sel=near(e);if(sel)show(sel);draw()});
+document.getElementById('q').addEventListener('input',e=>{const q=e.target.value.toLowerCase();
+ filt=items.filter(i=>(i.title+' '+(i.creators||[]).join(' ')+' '+(i.themes||[]).join(' ')+' '+i.caption).toLowerCase().includes(q));draw()});
+addEventListener('resize',fit);fit();
+</script></body></html>
